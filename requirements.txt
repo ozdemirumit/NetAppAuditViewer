@@ -1,0 +1,7 @@
+# NetApp Audit Viewer has no runtime dependencies.
+# Everything used (tkinter, xml.etree, threading, queue, csv, argparse)
+# is part of the Python standard library.
+#
+# Optional dependencies for development:
+#
+# pyinstaller>=6.19  # for building a Windows .exe

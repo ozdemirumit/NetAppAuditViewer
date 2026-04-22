@@ -1,0 +1,46 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+build_env/
+
+# --- PyInstaller ---
+build/
+dist/
+*.spec
+!NetAppAuditViewer.spec
+
+# --- IDEs / editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Local audit data (don't commit logs) ---
+*.xml
+!sample/*.xml
+audit_*
+sample_audit/
+
+# --- Output / temp ---
+*.log
+*.tmp
+output/
+exports/
+
+# --- Runtime ---
+mnt/
