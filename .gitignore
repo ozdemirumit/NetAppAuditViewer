@@ -14,6 +14,7 @@ venv/
 env/
 ENV/
 build_env/
+test_env/
 
 # --- PyInstaller ---
 build/

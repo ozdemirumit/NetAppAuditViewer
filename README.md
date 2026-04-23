@@ -4,7 +4,7 @@ A single-file Python GUI for browsing **NetApp ONTAP CIFS Security Audit XML** l
 
 Built for storage and infrastructure engineers who need to triage `audit_*.xml` output without spinning up Splunk/ELK.
 
-![status: working](https://img.shields.io/badge/status-working-brightgreen) ![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue) ![deps: stdlib only](https://img.shields.io/badge/deps-stdlib%20only-success) ![license: MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+[![PyPI](https://img.shields.io/pypi/v/netapp-audit-viewer.svg)](https://pypi.org/project/netapp-audit-viewer/) [![Python versions](https://img.shields.io/pypi/pyversions/netapp-audit-viewer.svg)](https://pypi.org/project/netapp-audit-viewer/) ![status: working](https://img.shields.io/badge/status-working-brightgreen) ![deps: stdlib only](https://img.shields.io/badge/deps-stdlib%20only-success) ![license: MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
 
@@ -22,16 +22,37 @@ Built for storage and infrastructure engineers who need to triage `audit_*.xml` 
 
 ---
 
+## Install
+
+From PyPI:
+
+```bash
+pip install netapp-audit-viewer
+netapp-audit-viewer
+```
+
+Or run directly from source — no install needed since the only dependency is the Python stdlib:
+
+```bash
+git clone https://github.com/ozdemirumit/NetAppAuditViewer.git
+cd NetAppAuditViewer
+python netapp_audit_viewer.py
+```
+
+Works on Windows, Linux and macOS.
+
+---
+
 ## Quick start
 
 ```bash
-python netapp_audit_viewer.py
-python netapp_audit_viewer.py /path/to/audit_log.xml
-python netapp_audit_viewer.py /path/to/audit_log.xml --tail
-python netapp_audit_viewer.py /path/to/audit_log.xml --filter-ip 10.0.0.5 --only-failures --tail
+netapp-audit-viewer
+netapp-audit-viewer /path/to/audit_log.xml
+netapp-audit-viewer /path/to/audit_log.xml --tail
+netapp-audit-viewer /path/to/audit_log.xml --filter-ip 10.0.0.5 --only-failures --tail
 ```
 
-That's it. No `pip install`, no virtual env. Works on Windows, Linux and macOS.
+(If running from source, substitute `python netapp_audit_viewer.py` for `netapp-audit-viewer`.)
 
 ### CLI options
 

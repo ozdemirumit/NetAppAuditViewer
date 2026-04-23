@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netapp-audit-viewer"
+version = "1.0.0"
+description = "Python GUI viewer and live-tail tool for NetApp ONTAP CIFS Security Audit XML logs — stdlib only, no install."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Umit Ozdemir", email = "umitozdemir@gmail.com" }]
+keywords = ["netapp", "ontap", "audit", "xml", "cifs", "smb", "security", "tkinter", "gui", "live-tail"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: MacOS X",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Logging",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/ozdemirumit/NetAppAuditViewer"
+Repository = "https://github.com/ozdemirumit/NetAppAuditViewer"
+Issues = "https://github.com/ozdemirumit/NetAppAuditViewer/issues"
+Changelog = "https://github.com/ozdemirumit/NetAppAuditViewer/blob/main/CHANGELOG.md"
+
+[project.scripts]
+netapp-audit-viewer = "netapp_audit_viewer:main"
+
+[tool.setuptools]
+py-modules = ["netapp_audit_viewer"]
