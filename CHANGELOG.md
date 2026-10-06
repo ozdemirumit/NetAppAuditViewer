@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Huawei OceanStor CIFS audit XML support (namespaced events, `<Events>` wrapper, vendor auto-detection).
+- `Vendor` and `Share` columns, Vendor filter, `--filter-vendor` CLI flag.
+- `%%NNNN` AccessList decoding; Shares / Top objects / File access users / Access types statistics tabs.
+
+### Changed
+- Statistics, context menu, detail pane and CSV now use unified User/IP fields, so file-operation events are included.
+
 ## [1.0.0] - 2026-04-22
 
 Initial public release.

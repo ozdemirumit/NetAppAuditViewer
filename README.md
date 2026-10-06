@@ -1,6 +1,6 @@
 # NetApp Audit XML Viewer
 
-A single-file Python GUI for browsing **NetApp ONTAP CIFS Security Audit XML** logs. Opens large files instantly, follows them like `tail -f` as new events are written, and lets you slice the data by user, IP, time range, and event type — with no external dependencies beyond Python's standard library.
+A single-file Python GUI for browsing **NetApp ONTAP** and **Huawei OceanStor (e.g. 5510) CIFS Security Audit XML** logs. Opens large files instantly, follows them like `tail -f` as new events are written, and lets you slice the data by user, IP, time range, and event type — with no external dependencies beyond Python's standard library.
 
 Built for storage and infrastructure engineers who need to triage `audit_*.xml` output without spinning up Splunk/ELK.
 
@@ -12,6 +12,7 @@ Built for storage and infrastructure engineers who need to triage `audit_*.xml` 
 
 - **Live tail** — watches the XML file and streams new events to the table as they're written, with proper handling of partial events that get split across writes.
 - **Rotated file support** — point it at a folder and it loads `audit.xml`, `audit.xml-1`, `audit.xml.0` etc. in chronological order, then tails the newest one.
+- **Huawei OceanStor support** — auto-detects Huawei audit XML (`Huawei-Security-Auditing`, namespaced `<Event>`, `<Events>` wrapper). Adds `Vendor` and `Share` columns, a Vendor filter (`--filter-vendor Huawei`), decodes `%%4416`-style `AccessList` codes, and file-access statistics tabs (Shares, Top objects, File access users, Access types).
 - **Unified columns for both event families** — logon events (4624/4625/4634) and file-operation events (4656/4663/4670/4907) share a single `User` / `IP` / `Object` / `Action` view, so you don't have to know which schema applies.
 - **Filters** — Event ID, Result, User, IP, time range (with `Last 1 hour` / `Last 24 hours` shortcuts), and a free-text search across all fields. Filters apply as you type (debounced).
 - **Right-click drill-in** — right-click any row to instantly filter by that IP/user, or run a combined "this IP + this user, failures only" pivot. Also copies values to clipboard.
@@ -63,6 +64,7 @@ netapp-audit-viewer /path/to/audit_log.xml --filter-ip 10.0.0.5 --only-failures 
 | `--filter-ip IP` | Pre-fill the IP-contains filter. |
 | `--filter-user USER` | Pre-fill the user-contains filter. |
 | `--filter-eventid ID` | Pre-filter by a specific Event ID (e.g. `4625`). |
+| `--filter-vendor V` | Pre-filter by vendor (`NetApp` or `Huawei`). |
 | `--only-failures` | Show only `Audit Failure` events on startup. |
 
 ---

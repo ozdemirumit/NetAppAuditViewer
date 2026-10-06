@@ -3,7 +3,8 @@
 NetApp Audit XML Viewer
 ========================
 
-A GUI viewer for NetApp ONTAP CIFS Security Audit XML log files. Parses events,
+A GUI viewer for NetApp ONTAP and Huawei OceanStor (e.g. 5510) CIFS Security
+Audit XML log files. Parses events,
 auto-loads new lines as they arrive (like `tail -f`), and supports filtering
 by EventID, Result, User, IP, time range, and free-text search across all fields.
 
@@ -55,6 +56,15 @@ def parse_event(xml_bytes: bytes) -> dict | None:
     except ET.ParseError:
         return None
 
+    # Huawei events carry an xmlns on <Event>; strip namespaces so the same
+    # find() calls work for every vendor.
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag[1:].split("}", 1)[0]
+    for el in root.iter():
+        if isinstance(el.tag, str) and "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+
     rec = {
         "EventID": "",
         "EventName": "",
@@ -63,6 +73,10 @@ def parse_event(xml_bytes: bytes) -> dict | None:
         "Time": "",
         "Computer": "",
         "Channel": "",
+        "Vendor": "NetApp",
+        "Share": "",
+        "Path": "",
+        "AccessText": "",
         # Logon events use these
         "IpAddress": "",
         "IpPort": "",
@@ -111,6 +125,10 @@ def parse_event(xml_bytes: bytes) -> dict | None:
                     rec[k] = el.text.strip()
                 else:
                     rec["_extra"][k] = el.text.strip()
+        prov = sysn.find("Provider")
+        if "huawei" in (ns + (prov.attrib.get("Name", "") if prov is not None
+                              else "")).lower():
+            rec["Vendor"] = "Huawei"
         r = sysn.find("Result")
         if r is not None and r.text:
             rec["Result"] = r.text.strip()
@@ -129,27 +147,76 @@ def parse_event(xml_bytes: bytes) -> dict | None:
                 rec[name] = value
             else:
                 rec["_extra"][name] = value
+            # Keep informative attributes (e.g. Huawei SubjectUnix Uid/Gid)
+            if not value:
+                attrs = {k: v for k, v in d.attrib.items() if k != "Name"}
+                if attrs and name not in rec:
+                    rec["_extra"][name] = ", ".join(
+                        f"{k}={v}" for k, v in attrs.items())
 
     # Unified columns: prefer Subject* (file ops) when present, else Target* (logon)
     rec["User"]   = rec["SubjectUserName"]   or rec["TargetUserName"]
     rec["Domain"] = rec["SubjectDomainName"] or rec["TargetDomainName"]
     rec["IP"]     = rec["SubjectIP"]         or rec["IpAddress"]
     rec["Object"] = rec["ObjectName"]
+    # ObjectName looks like "(ShareName);/dir/file"
+    m = re.match(r"\(([^)]*)\);\s*(.*)$", rec["ObjectName"], re.DOTALL)
+    if m:
+        rec["Share"], rec["Path"] = m.group(1), m.group(2).strip()
+    else:
+        rec["Path"] = rec["ObjectName"]
+    rec["AccessText"] = decode_access_list(rec["AccessList"])
     # "Action" summary: depends on event type
     eid = rec["EventID"]
     if eid in ("4656", "4663"):
         rec["Action"] = (rec["DesiredAccess"]
                          or rec["InformationRequested"]
+                         or rec["AccessText"]
                          or rec["AccessList"])
+    elif eid == "4660":
+        rec["Action"] = "Object deleted"
+    elif eid == "4658":
+        rec["Action"] = "Handle closed"
     elif eid == "4670":
         rec["Action"] = "Permissions changed"
     elif eid == "4907":
         rec["Action"] = "Audit settings changed"
     elif eid in ("4624", "4625", "4634"):
         rec["Action"] = rec["FailureReasonString"]   # only failures populate
+        if not rec["Action"] and rec["LogonType"]:
+            rec["Action"] = f"LogonType {rec['LogonType']}"
+    if not rec["EventName"]:
+        rec["EventName"] = EVENT_NAMES.get(eid, "")
 
     rec["TimeDisplay"] = _format_time(rec["Time"])
     return rec
+
+
+EVENT_NAMES = {
+    "4624": "Logon Attempt", "4625": "Logon Failure", "4634": "Logoff",
+    "4656": "Open Object", "4658": "Close Handle", "4660": "Delete Object",
+    "4663": "Get Object Attributes", "4670": "Permissions Changed",
+    "4907": "Auditing Settings Changed",
+}
+
+# Windows-style access-right message codes used in AccessList (%%NNNN)
+ACCESS_CODES = {
+    "1537": "DELETE", "1538": "READ_CONTROL", "1539": "WRITE_DAC",
+    "1540": "WRITE_OWNER", "1541": "SYNCHRONIZE",
+    "4416": "ReadData/ListDirectory", "4417": "WriteData/AddFile",
+    "4418": "AppendData/AddSubdirectory", "4419": "ReadEA", "4420": "WriteEA",
+    "4421": "Execute/Traverse", "4422": "DeleteChild",
+    "4423": "ReadAttributes", "4424": "WriteAttributes",
+}
+
+
+def decode_access_list(access_list: str) -> str:
+    """'%%4416 %%4423' -> 'ReadData/ListDirectory; ReadAttributes'"""
+    if not access_list:
+        return ""
+    names = [ACCESS_CODES.get(c, f"%%{c}")
+             for c in re.findall(r"%%(\d+)", access_list)]
+    return "; ".join(names)
 
 
 def _format_time(iso: str) -> str:
@@ -330,17 +397,34 @@ class TailReader(threading.Thread):
 # GUI
 # ---------------------------------------------------------------------------
 
+DETAIL_ORDER = [
+    "Time", "Vendor", "EventID", "EventName", "Source", "Result",
+    "Computer", "Channel",
+    "User", "Domain", "IP", "IpPort",
+    "IpAddress", "TargetUserName", "TargetDomainName", "TargetUserSid",
+    "TargetUserIsLocal", "Status", "FailureReason", "FailureReasonString",
+    "AuthenticationPackageName", "LogonType",
+    "SubjectIP", "SubjectUserName", "SubjectDomainName", "SubjectUserSid",
+    "SubjectUserIsLocal",
+    "ObjectServer", "ObjectType", "Share", "Path", "ObjectName", "HandleID",
+    "AccessText", "AccessList", "AccessMask", "DesiredAccess",
+    "InformationRequested", "Attributes", "OldSD", "NewSD",
+]
+
+
 class AuditViewer(tk.Tk):
 
     COLUMNS = [
         ("TimeDisplay", "Time",     150),
         ("EventID",     "ID",       60),
         ("EventName",   "Event",    160),
+        ("Vendor",      "Vendor",   60),
         ("Result",      "Result",   100),
         ("IP",          "IP",       125),
         ("User",        "User",     130),
         ("Domain",      "Domain",   100),
-        ("Object",      "Object",   320),
+        ("Share",       "Share",    110),
+        ("Path",        "Object",   320),
         ("Action",      "Action / Reason", 260),
     ]
 
@@ -363,6 +447,7 @@ class AuditViewer(tk.Tk):
         self.path_var       = tk.StringVar()
         self.filter_eventid = tk.StringVar(value="All")
         self.filter_result  = tk.StringVar(value="All")
+        self.filter_vendor  = tk.StringVar(value="All")
         self.filter_user    = tk.StringVar()
         self.filter_ip      = tk.StringVar()
         self.filter_search  = tk.StringVar()
@@ -428,6 +513,14 @@ class AuditViewer(tk.Tk):
         ttk.Label(flt, text="IP contains:").grid(row=0, column=6, sticky="w")
         e_ip = ttk.Entry(flt, textvariable=self.filter_ip, width=18)
         e_ip.grid(row=0, column=7, padx=(4, 12))
+
+        ttk.Label(flt, text="Vendor:").grid(row=0, column=8, sticky="w")
+        self.vendor_combo = ttk.Combobox(
+            flt, textvariable=self.filter_vendor,
+            values=["All", "NetApp", "Huawei"], width=9, state="readonly")
+        self.vendor_combo.grid(row=0, column=9, padx=(4, 0))
+        self.vendor_combo.bind("<<ComboboxSelected>>",
+                               lambda _e: self._apply_filters())
 
         # --- Time range (row 1) ---
         ttk.Label(flt, text="From (YYYY-MM-DD HH:MM):").grid(
@@ -708,6 +801,9 @@ class AuditViewer(tk.Tk):
         f_res = self.filter_result.get()
         if f_res != "All" and ev.get("Result") != f_res:
             return False
+        f_ven = self.filter_vendor.get()
+        if f_ven != "All" and ev.get("Vendor") != f_ven:
+            return False
         f_user = self.filter_user.get().strip().lower()
         if f_user and f_user not in ev.get("User", "").lower():
             return False
@@ -807,6 +903,7 @@ class AuditViewer(tk.Tk):
     def _reset_filters(self):
         self.filter_eventid.set("All")
         self.filter_result.set("All")
+        self.filter_vendor.set("All")
         self.filter_user.set("")
         self.filter_ip.set("")
         self.filter_search.set("")
@@ -856,10 +953,10 @@ class AuditViewer(tk.Tk):
             return
         ev = self.events[idx]
 
-        ip   = ev.get("IpAddress", "")
-        user = ev.get("TargetUserName", "")
+        ip   = ev.get("IP", "")
+        user = ev.get("User", "")
         eid  = ev.get("EventID", "")
-        dom  = ev.get("TargetDomainName", "")
+        dom  = ev.get("Domain", "")
         reason = ev.get("FailureReasonString", "")
 
         m = self._ctx_menu
@@ -959,12 +1056,7 @@ class AuditViewer(tk.Tk):
         if not (0 <= idx < len(self.events)):
             return
         ev = self.events[idx]
-        order = ["Time", "EventID", "EventName", "Source", "Result",
-                 "Computer", "Channel", "IpAddress", "IpPort",
-                 "TargetUserName", "TargetDomainName", "TargetUserSid",
-                 "TargetUserIsLocal", "Status", "FailureReason",
-                 "FailureReasonString", "AuthenticationPackageName", "LogonType"]
-        lines = [f"{k}\t{ev[k]}" for k in order if ev.get(k)]
+        lines = [f"{k}\t{ev[k]}" for k in DETAIL_ORDER if ev.get(k)]
         for k, v in ev.get("_extra", {}).items():
             lines.append(f"{k}\t{v}")
         self._to_clipboard("\n".join(lines))
@@ -983,14 +1075,7 @@ class AuditViewer(tk.Tk):
             return
         ev = self.events[idx]
 
-        order = ["Time", "EventID", "EventName", "Source", "Result",
-                 "Computer", "Channel",
-                 "IpAddress", "IpPort",
-                 "TargetUserName", "TargetDomainName", "TargetUserSid",
-                 "TargetUserIsLocal",
-                 "Status", "FailureReason", "FailureReasonString",
-                 "AuthenticationPackageName", "LogonType"]
-        lines = [f"{k:<28} {ev[k]}" for k in order if ev.get(k)]
+        lines = [f"{k:<28} {ev[k]}" for k in DETAIL_ORDER if ev.get(k)]
         for k, v in ev.get("_extra", {}).items():
             lines.append(f"{k:<28} {v}")
         self._set_detail("\n".join(lines))
@@ -1030,20 +1115,31 @@ class AuditViewer(tk.Tk):
         results_c   = Counter(e.get("Result", "") or "(yok)" for e in events)
         eid_c       = Counter(e.get("EventID", "") or "(yok)" for e in events)
         evname_c    = Counter(e.get("EventName", "") or "(yok)" for e in events)
-        ip_c        = Counter(e.get("IpAddress", "") for e in events
-                              if e.get("IpAddress"))
-        user_c      = Counter(e.get("TargetUserName", "") for e in events
-                              if e.get("TargetUserName"))
-        domain_c    = Counter(e.get("TargetDomainName", "") for e in events
-                              if e.get("TargetDomainName"))
+        ip_c        = Counter(e.get("IP", "") for e in events
+                              if e.get("IP"))
+        user_c      = Counter(e.get("User", "") for e in events
+                              if e.get("User"))
+        domain_c    = Counter(e.get("Domain", "") for e in events
+                              if e.get("Domain"))
+        share_c     = Counter(e.get("Share", "") for e in events
+                              if e.get("Share"))
+        object_c    = Counter(e.get("ObjectName", "") for e in events
+                              if e.get("ObjectName"))
+        action_c    = Counter(e.get("Action", "") for e in events
+                              if e.get("Action")
+                              and e.get("EventID") in ("4656", "4663",
+                                                       "4660", "4670", "4907"))
+        file_user_c = Counter(e.get("User", "") for e in events
+                              if e.get("User") and e.get("ObjectName"))
+        vendor_c    = Counter(e.get("Vendor", "") for e in events)
         reason_c    = Counter(e.get("FailureReasonString", "") for e in events
                               if e.get("FailureReasonString"))
         # Failure-only IP/User (for attack candidates)
-        fail_ip_c   = Counter(e.get("IpAddress", "") for e in events
-                              if e.get("IpAddress")
+        fail_ip_c   = Counter(e.get("IP", "") for e in events
+                              if e.get("IP")
                               and "Failure" in e.get("Result", ""))
-        fail_user_c = Counter(e.get("TargetUserName", "") for e in events
-                              if e.get("TargetUserName")
+        fail_user_c = Counter(e.get("User", "") for e in events
+                              if e.get("User")
                               and "Failure" in e.get("Result", ""))
         # Hourly distribution
         hours_c = Counter()
@@ -1073,7 +1169,8 @@ class AuditViewer(tk.Tk):
             f"Total: {total:,}    "
             f"Success: {succ:,}    Failure: {fail:,}    "
             f"Unique IPs: {unique_ips:,}    Unique users: {unique_users:,}\n"
-            f"Time range: {rng}"
+            f"Time range: {rng}    "
+            f"Vendors: " + ", ".join(f"{k} {v:,}" for k, v in vendor_c.items())
         )
         ttk.Label(head, text=summary, font=("Segoe UI", 10, "bold"),
                   justify="left").pack(anchor="w")
@@ -1150,6 +1247,28 @@ class AuditViewer(tk.Tk):
             topk(reason_c, 100))
         nb.add(tab6, text=f"Failure reasons ({len(reason_c)})")
 
+        # Tabs for file-access (CIFS object) analysis
+        tab8, _ = make_table(
+            nb, [("Share", 220), ("Count", 100), ("%", 80)], topk(share_c, 100))
+        nb.add(tab8, text=f"Shares ({len(share_c)})")
+
+        tab9, _ = make_table(
+            nb, [("Object", 560), ("Count", 100), ("%", 80)],
+            topk(object_c, 200))
+        nb.add(tab9, text=f"Top objects ({len(object_c)})")
+
+        tab10, tv10 = make_table(
+            nb, [("User", 180), ("File events", 120), ("%", 80)],
+            topk(file_user_c, 100))
+        nb.add(tab10, text=f"File access users ({len(file_user_c)})")
+        tv10.bind("<Double-1>", lambda _e: self._stats_filter(
+            tv10, "User", win))
+
+        tab11, _ = make_table(
+            nb, [("Access", 480), ("Count", 100), ("%", 80)],
+            topk(action_c, 100))
+        nb.add(tab11, text=f"Access types ({len(action_c)})")
+
         # Tab: Hourly distribution (simple ASCII bar chart)
         tab7 = ttk.Frame(nb)
         nb.add(tab7, text=f"Hourly distribution ({len(hours_c)} saat)")
@@ -1199,8 +1318,10 @@ class AuditViewer(tk.Tk):
             filetypes=[("CSV", "*.csv")])
         if not p:
             return
-        cols = ["TimeDisplay", "EventID", "EventName", "Source", "Result",
-                "Computer", "IpAddress", "IpPort",
+        cols = ["TimeDisplay", "Vendor", "EventID", "EventName", "Source",
+                "Result", "Computer", "IP", "User", "Domain", "Share",
+                "ObjectName", "ObjectType", "Action", "AccessMask",
+                "IpAddress", "IpPort",
                 "TargetUserName", "TargetDomainName", "TargetUserSid",
                 "Status", "FailureReason", "FailureReasonString",
                 "AuthenticationPackageName", "LogonType"]
@@ -1239,6 +1360,8 @@ def _parse_cli_args(argv: list[str]) -> argparse.Namespace:
                    help="Pre-fill the user-contains filter on startup.")
     p.add_argument("--filter-eventid", default="",
                    help="Pre-filter by a specific EventID on startup (e.g. 4625).")
+    p.add_argument("--filter-vendor", default="", choices=["", "NetApp", "Huawei"],
+                   help="Pre-filter by storage vendor on startup.")
     p.add_argument("--only-failures", action="store_true",
                    help="Show only Audit Failure events on startup.")
     return p.parse_args(argv)
@@ -1256,6 +1379,8 @@ def main(argv: list[str] | None = None):
         app.filter_user.set(args.filter_user)
     if args.filter_eventid:
         app.filter_eventid.set(args.filter_eventid)
+    if args.filter_vendor:
+        app.filter_vendor.set(args.filter_vendor)
     if args.only_failures:
         app.filter_result.set("Audit Failure")
     if args.path and args.tail:
