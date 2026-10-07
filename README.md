@@ -122,19 +122,33 @@ A single host hammering one username with `No such user account` failures over m
 
 ## Build a Windows `.exe`
 
-If you want to ship this to colleagues who don't have Python installed, use [PyInstaller](https://pyinstaller.org):
+Ship the viewer to colleagues who don't have Python installed. The build produces a **single, self-contained `NetAppAuditViewer.exe`** — the Python runtime, Tcl/Tk and every required DLL are packed inside it, so **no external DLLs, no Python install and no extra files** are needed on the target machine. Copy the one file anywhere and run it.
+
+### Using `build.bat` (recommended)
+
+`build.bat` is included in the repo. On a Windows machine with Python 3.10+ installed:
+
+1. Open the repo folder.
+2. Double-click `build.bat` (or run it from `cmd`).
+3. Take the result from `dist\NetAppAuditViewer.exe`.
+
+What the script does:
+
+- Removes previous `build\` and `dist\` folders.
+- Installs [PyInstaller](https://pyinstaller.org) with `pip` if it is missing.
+- Runs PyInstaller with `--onefile --windowed --clean`, which gives one exe and no console window.
+- Stops with an error message if the build fails.
+
+### Manual build
 
 ```cmd
 pip install pyinstaller
-pyinstaller --windowed --name "NetAppAuditViewer" --clean netapp_audit_viewer.py
+pyinstaller --noconfirm --onefile --windowed --name "NetAppAuditViewer" --clean netapp_audit_viewer.py
 ```
 
-The result is in `dist\NetAppAuditViewer\` (about 12 MB compressed). Zip the folder and you're done.
-
-A ready-made `build.bat` is included in the repo — double-click it. It builds a **single self-contained `dist\NetAppAuditViewer.exe`** (`--onefile`, no external DLLs).
-
 **Notes:**
-- `--onefile` produces a single `.exe`, but corporate antivirus often quarantines PyInstaller's onefile bootloader. The default `--onedir` build is more AV-friendly.
+- A `--onefile` exe unpacks itself to a temporary folder on every start, so launch takes a second or two longer. Corporate antivirus sometimes flags PyInstaller's onefile bootloader — whitelist the exe if that happens. If it keeps being quarantined, build without `--onefile` (folder build in `dist\NetAppAuditViewer\`, more AV-friendly, but you must ship the whole folder).
+- The exe must be built on Windows; PyInstaller cannot cross-compile from Linux/macOS.
 - Add `--icon=audit.ico` if you want a custom icon.
 - For a tiny portable alternative when target machines have Python: `python -m zipapp . -m "netapp_audit_viewer:main" -o NetAppAuditViewer.pyz` produces a ~40 KB single-file zipapp.
 
