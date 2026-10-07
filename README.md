@@ -10,6 +10,7 @@ Built for storage and infrastructure engineers who need to triage `audit_*.xml` 
 
 ## Features
 
+- **Separate Open File / Start Tail buttons** — *Open File* loads the file once (no following); *Start Tail* follows it for new events, continuing right after the loaded content if you opened it first.
 - **Live tail** — watches the XML file and streams new events to the table as they're written, with proper handling of partial events that get split across writes.
 - **Rotated file support** — point it at a folder and it loads `audit.xml`, `audit.xml-1`, `audit.xml.0` etc. in chronological order, then tails the newest one.
 - **Huawei OceanStor support** — auto-detects Huawei audit XML (`Huawei-Security-Auditing`, namespaced `<Event>`, `<Events>` wrapper). Adds a `Share` column and a Vendor selector in the top bar (Auto / NetApp / Huawei; Auto detects the vendor from the file and shows it in the status bar; CLI: `--vendor huawei`), decodes `%%4416`-style `AccessList` codes, and file-access statistics tabs (Shares, Top objects, File access users, Access types).

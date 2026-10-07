@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `%%NNNN` AccessList decoding; Shares / Top objects / File access users / Access types statistics tabs.
 
 ### Changed
+- Split the single "Open & Tail" button into **Open File** (one-time load) and **Start Tail/Stop Tail** (follow; resumes after the loaded content). Reload keeps tail state.
 - Statistics, context menu, detail pane and CSV now use unified User/IP fields, so file-operation events are included.
 
 ## [1.0.0] - 2026-04-22

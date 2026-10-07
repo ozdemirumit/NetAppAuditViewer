@@ -275,13 +275,16 @@ class TailReader(threading.Thread):
 
     def __init__(self, path: str, out_queue: queue.Queue,
                  stop_event: threading.Event, poll: float = POLL_INTERVAL,
-                 start_at_end: bool = False):
+                 start_at_end: bool = False, follow: bool = True,
+                 start_pos: int | None = None):
         super().__init__(daemon=True)
         self.path = path
         self.q = out_queue
         self.stop_event = stop_event
         self.poll = poll
         self.start_at_end = start_at_end
+        self.follow = follow            # False: read once and stop (Open File)
+        self.start_pos = start_pos      # resume tailing from this offset
         self._buf = b""
         self._pos = 0
 
@@ -337,7 +340,15 @@ class TailReader(threading.Thread):
     def run(self):
         self._file_sig = self._stat_signature()
         self._head_sig = self._head_signature()
-        if self.start_at_end:
+        if self.start_pos is not None:
+            # Resume right after what "Open File" already loaded
+            try:
+                self._pos = min(self.start_pos, os.path.getsize(self.path))
+            except OSError as e:
+                self._emit("error", f"Cannot open file: {e}")
+                return
+            self._emit("initial", [])
+        elif self.start_at_end:
             # Only watch the end of the file, do not re-read existing content
             try:
                 self._pos = os.path.getsize(self.path)
@@ -352,7 +363,12 @@ class TailReader(threading.Thread):
                 self._emit("error", f"Cannot open file: {e}")
                 return
             initial = self._consume(chunk)
+            if self.stop_event.is_set():
+                return
             self._emit("initial", initial)
+            if not self.follow:
+                self._emit("loaded", self._pos)
+                return
 
         missing_since = None
 
@@ -474,6 +490,8 @@ class AuditViewer(tk.Tk):
         self.queue: queue.Queue = queue.Queue()
         self.tailing = False
         self._known_event_ids: set[str] = set()
+        self._loaded_path = ""          # file loaded by "Open File"
+        self._loaded_pos: int | None = None
 
         # Filter variables
         self.path_var       = tk.StringVar()
@@ -510,7 +528,10 @@ class AuditViewer(tk.Tk):
         ttk.Entry(top, textvariable=self.path_var).pack(
             side="left", fill="x", expand=True, padx=6)
         ttk.Button(top, text="Browse...", command=self._browse).pack(side="left")
-        self.tail_btn = ttk.Button(top, text="Open & Tail", command=self._toggle_tail)
+        ttk.Button(top, text="Open File", command=self._open_file).pack(
+            side="left", padx=(6, 0))
+        self.tail_btn = ttk.Button(top, text="Start Tail",
+                                   command=self._toggle_tail)
         self.tail_btn.pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Folder (rotated)...",
                    command=self._open_directory).pack(side="left", padx=(6, 0))
@@ -696,11 +717,8 @@ class AuditViewer(tk.Tk):
 
         # Mevcut tail/state'i sifirla
         self._stop_tail()
-        self.events.clear()
-        self.filtered_indices.clear()
-        self._known_event_ids.clear()
-        self._clear_tree()
-        self._set_detail("")
+        self._reset_data()
+        self._loaded_path = ""
 
         total = 0
         errors = []
@@ -752,24 +770,60 @@ class AuditViewer(tk.Tk):
         else:
             self._start_tail()
 
-    def _start_tail(self):
-        path = self.path_var.get().strip()
-        if not path or not os.path.isfile(path):
-            messagebox.showerror("Error", "Please select a valid XML file.")
-            return
-        self._stop_tail()
+    def _reset_data(self):
         self.events.clear()
         self.filtered_indices.clear()
         self._known_event_ids.clear()
         self._clear_tree()
         self._set_detail("")
+        self._loaded_pos = None
+        try:                      # drop events still queued from old readers
+            while True:
+                self.queue.get_nowait()
+        except queue.Empty:
+            pass
 
+    def _valid_path(self) -> str | None:
+        path = self.path_var.get().strip()
+        if not path or not os.path.isfile(path):
+            messagebox.showerror("Error", "Please select a valid XML file.")
+            return None
+        return path
+
+    def _open_file(self):
+        """Load the whole file once. No live following."""
+        path = self._valid_path()
+        if not path:
+            return
+        self._stop_tail()
+        self._reset_data()
+        self._loaded_path = path
         self.tail_stop = threading.Event()
-        self.tail_thread = TailReader(path, self.queue, self.tail_stop)
+        self.tail_thread = TailReader(path, self.queue, self.tail_stop,
+                                      follow=False)
+        self.tail_thread.start()
+        self.status_var.set(f"Loading: {path}")
+
+    def _start_tail(self):
+        """Follow the file for new events. If it was already opened with
+        "Open File", continue from where that load ended; otherwise read the
+        file from the start and then follow it."""
+        path = self._valid_path()
+        if not path:
+            return
+        resume = (self._loaded_pos if path == self._loaded_path
+                  and self.events else None)
+        self._stop_tail()
+        if resume is None:
+            self._reset_data()
+            self._loaded_path = ""
+        self.tail_stop = threading.Event()
+        self.tail_thread = TailReader(path, self.queue, self.tail_stop,
+                                      start_pos=resume)
         self.tail_thread.start()
         self.tailing = True
         self.tail_btn.configure(text="Stop Tail")
-        self.status_var.set(f"Reading: {path}")
+        self.status_var.set(f"Tailing: {path}")
 
     def _stop_tail(self):
         if self.tail_stop is not None:
@@ -777,11 +831,18 @@ class AuditViewer(tk.Tk):
         self.tail_thread = None
         self.tail_stop = None
         self.tailing = False
-        self.tail_btn.configure(text="Ac & Tail")
+        self.tail_btn.configure(text="Start Tail")
 
     def _reload(self):
-        if self.path_var.get().strip():
+        """Re-read the file from scratch, keeping tail on if it was on."""
+        if not self.path_var.get().strip():
+            return
+        was_tailing = self.tailing
+        self._loaded_path = ""
+        if was_tailing:
             self._start_tail()
+        else:
+            self._open_file()
 
     # ----------------------------------------------------------- Queue draining
 
@@ -798,6 +859,9 @@ class AuditViewer(tk.Tk):
                     self.events.extend(payload)
                     self._update_event_id_combo()
                     self._apply_filters()
+                elif kind == "loaded":
+                    self._loaded_pos = payload
+                    self._update_status()
                 elif kind == "new":
                     self._relabel_vendor(payload)
                     start = len(self.events)
