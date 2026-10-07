@@ -131,7 +131,7 @@ pyinstaller --windowed --name "NetAppAuditViewer" --clean netapp_audit_viewer.py
 
 The result is in `dist\NetAppAuditViewer\` (about 12 MB compressed). Zip the folder and you're done.
 
-A ready-made `build.bat` is included in the repo — double-click it.
+A ready-made `build.bat` is included in the repo — double-click it. It builds a **single self-contained `dist\NetAppAuditViewer.exe`** (`--onefile`, no external DLLs).
 
 **Notes:**
 - `--onefile` produces a single `.exe`, but corporate antivirus often quarantines PyInstaller's onefile bootloader. The default `--onedir` build is more AV-friendly.

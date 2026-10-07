@@ -24,10 +24,13 @@ echo.
 echo Building...
 echo.
 
-REM Using --onedir (default) for antivirus compatibility and faster startup.
-REM If you want a single .exe, add --onefile to the line below.
+REM Single self-contained .exe (--onefile): Python runtime, Tcl/Tk and all
+REM DLLs are packed inside; no external files are needed next to the exe.
+REM --onefile unpacks to a temp folder at startup (a second or two slower),
+REM and some antivirus products flag onefile bootloaders - whitelist if needed.
 python -m PyInstaller ^
     --noconfirm ^
+    --onefile ^
     --windowed ^
     --name "NetAppAuditViewer" ^
     --clean ^
@@ -42,8 +45,8 @@ if errorlevel 1 (
 echo.
 echo ===========================================================
 echo Build complete.
-echo Executable: dist\NetAppAuditViewer\NetAppAuditViewer.exe
-echo Zip the folder for distribution.
+echo Executable: dist\NetAppAuditViewer.exe
+echo Single file - copy dist\NetAppAuditViewer.exe anywhere to run it.
 echo ===========================================================
 
 endlocal
