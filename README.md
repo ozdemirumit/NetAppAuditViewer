@@ -12,7 +12,7 @@ Built for storage and infrastructure engineers who need to triage `audit_*.xml` 
 
 - **Live tail** — watches the XML file and streams new events to the table as they're written, with proper handling of partial events that get split across writes.
 - **Rotated file support** — point it at a folder and it loads `audit.xml`, `audit.xml-1`, `audit.xml.0` etc. in chronological order, then tails the newest one.
-- **Huawei OceanStor support** — auto-detects Huawei audit XML (`Huawei-Security-Auditing`, namespaced `<Event>`, `<Events>` wrapper). Adds `Vendor` and `Share` columns, a Vendor filter (`--filter-vendor Huawei`), decodes `%%4416`-style `AccessList` codes, and file-access statistics tabs (Shares, Top objects, File access users, Access types).
+- **Huawei OceanStor support** — auto-detects Huawei audit XML (`Huawei-Security-Auditing`, namespaced `<Event>`, `<Events>` wrapper). Adds a `Share` column and a Vendor selector in the top bar (Auto / NetApp / Huawei; Auto detects the vendor from the file and shows it in the status bar; CLI: `--vendor huawei`), decodes `%%4416`-style `AccessList` codes, and file-access statistics tabs (Shares, Top objects, File access users, Access types).
 - **Unified columns for both event families** — logon events (4624/4625/4634) and file-operation events (4656/4663/4670/4907) share a single `User` / `IP` / `Object` / `Action` view, so you don't have to know which schema applies.
 - **Filters** — Event ID, Result, User, IP, time range (with `Last 1 hour` / `Last 24 hours` shortcuts), and a free-text search across all fields. Filters apply as you type (debounced).
 - **Right-click drill-in** — right-click any row to instantly filter by that IP/user, or run a combined "this IP + this user, failures only" pivot. Also copies values to clipboard.
@@ -64,7 +64,7 @@ netapp-audit-viewer /path/to/audit_log.xml --filter-ip 10.0.0.5 --only-failures 
 | `--filter-ip IP` | Pre-fill the IP-contains filter. |
 | `--filter-user USER` | Pre-fill the user-contains filter. |
 | `--filter-eventid ID` | Pre-filter by a specific Event ID (e.g. `4625`). |
-| `--filter-vendor V` | Pre-filter by vendor (`NetApp` or `Huawei`). |
+| `--vendor V` | Vendor label: `auto` (default), `netapp` or `huawei`. |
 | `--only-failures` | Show only `Audit Failure` events on startup. |
 
 ---

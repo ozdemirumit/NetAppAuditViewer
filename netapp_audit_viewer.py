@@ -74,6 +74,7 @@ def parse_event(xml_bytes: bytes) -> dict | None:
         "Computer": "",
         "Channel": "",
         "Vendor": "NetApp",
+        "VendorDetected": "NetApp",
         "Share": "",
         "Path": "",
         "AccessText": "",
@@ -128,7 +129,7 @@ def parse_event(xml_bytes: bytes) -> dict | None:
         prov = sysn.find("Provider")
         if "huawei" in (ns + (prov.attrib.get("Name", "") if prov is not None
                               else "")).lower():
-            rec["Vendor"] = "Huawei"
+            rec["Vendor"] = rec["VendorDetected"] = "Huawei"
         r = sysn.find("Result")
         if r is not None and r.text:
             rec["Result"] = r.text.strip()
@@ -418,7 +419,6 @@ class AuditViewer(tk.Tk):
         ("TimeDisplay", "Time",     150),
         ("EventID",     "ID",       60),
         ("EventName",   "Event",    160),
-        ("Vendor",      "Vendor",   60),
         ("Result",      "Result",   100),
         ("IP",          "IP",       125),
         ("User",        "User",     130),
@@ -447,7 +447,7 @@ class AuditViewer(tk.Tk):
         self.path_var       = tk.StringVar()
         self.filter_eventid = tk.StringVar(value="All")
         self.filter_result  = tk.StringVar(value="All")
-        self.filter_vendor  = tk.StringVar(value="All")
+        self.vendor_mode    = tk.StringVar(value="Auto")
         self.filter_user    = tk.StringVar()
         self.filter_ip      = tk.StringVar()
         self.filter_search  = tk.StringVar()
@@ -482,6 +482,12 @@ class AuditViewer(tk.Tk):
         self.tail_btn.pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Folder (rotated)...",
                    command=self._open_directory).pack(side="left", padx=(6, 0))
+        ttk.Label(top, text="Vendor:").pack(side="left", padx=(10, 2))
+        vcombo = ttk.Combobox(top, textvariable=self.vendor_mode, width=8,
+                              values=["Auto", "NetApp", "Huawei"],
+                              state="readonly")
+        vcombo.pack(side="left")
+        vcombo.bind("<<ComboboxSelected>>", lambda _e: self._on_vendor_changed())
         ttk.Button(top, text="Reload", command=self._reload).pack(
             side="left", padx=(6, 0))
         ttk.Button(top, text="Statistics...", command=self._show_stats).pack(
@@ -513,14 +519,6 @@ class AuditViewer(tk.Tk):
         ttk.Label(flt, text="IP contains:").grid(row=0, column=6, sticky="w")
         e_ip = ttk.Entry(flt, textvariable=self.filter_ip, width=18)
         e_ip.grid(row=0, column=7, padx=(4, 12))
-
-        ttk.Label(flt, text="Vendor:").grid(row=0, column=8, sticky="w")
-        self.vendor_combo = ttk.Combobox(
-            flt, textvariable=self.filter_vendor,
-            values=["All", "NetApp", "Huawei"], width=9, state="readonly")
-        self.vendor_combo.grid(row=0, column=9, padx=(4, 0))
-        self.vendor_combo.bind("<<ComboboxSelected>>",
-                               lambda _e: self._apply_filters())
 
         # --- Time range (row 1) ---
         ttk.Label(flt, text="From (YYYY-MM-DD HH:MM):").grid(
@@ -687,6 +685,8 @@ class AuditViewer(tk.Tk):
                     self.events.append(ev)
                     total += 1
 
+        self._relabel_vendor(self.events)
+
         # En yeni dosyayi tail et
         latest = files[-1][1]
         self.path_var.set(latest)
@@ -762,10 +762,12 @@ class AuditViewer(tk.Tk):
                     messagebox.showerror("Error", payload)
                     self._stop_tail()
                 elif kind == "initial":
+                    self._relabel_vendor(payload)
                     self.events.extend(payload)
                     self._update_event_id_combo()
                     self._apply_filters()
                 elif kind == "new":
+                    self._relabel_vendor(payload)
                     start = len(self.events)
                     self.events.extend(payload)
                     self._update_event_id_combo()
@@ -782,6 +784,18 @@ class AuditViewer(tk.Tk):
         if new_count:
             self._update_status()
         self.after(150, self._drain_queue)
+
+    def _relabel_vendor(self, events: list[dict]):
+        """Apply the Vendor selector: Auto keeps the detected vendor, otherwise
+        the chosen vendor overrides the label."""
+        mode = self.vendor_mode.get()
+        for ev in events:
+            ev["Vendor"] = (ev.get("VendorDetected", "NetApp")
+                            if mode == "Auto" else mode)
+
+    def _on_vendor_changed(self):
+        self._relabel_vendor(self.events)
+        self._apply_filters()
 
     def _update_event_id_combo(self):
         ids = {e["EventID"] for e in self.events if e["EventID"]}
@@ -800,9 +814,6 @@ class AuditViewer(tk.Tk):
             return False
         f_res = self.filter_result.get()
         if f_res != "All" and ev.get("Result") != f_res:
-            return False
-        f_ven = self.filter_vendor.get()
-        if f_ven != "All" and ev.get("Vendor") != f_ven:
             return False
         f_user = self.filter_user.get().strip().lower()
         if f_user and f_user not in ev.get("User", "").lower():
@@ -903,7 +914,6 @@ class AuditViewer(tk.Tk):
     def _reset_filters(self):
         self.filter_eventid.set("All")
         self.filter_result.set("All")
-        self.filter_vendor.set("All")
         self.filter_user.set("")
         self.filter_ip.set("")
         self.filter_search.set("")
@@ -1094,7 +1104,13 @@ class AuditViewer(tk.Tk):
         shown = len(self.filtered_indices)
         rendered = len(self.tree.get_children())
         state = "Tail active" if self.tailing else "Stopped"
-        msg = (f"{state}  |  Total: {total:,}  |  "
+        vendor = ""
+        if self.events:
+            mode = self.vendor_mode.get()
+            vendor = (f"Vendor: {self.events[-1].get('Vendor', '')}"
+                      f"{' (auto-detected)' if mode == 'Auto' else ' (manual)'}"
+                      "  |  ")
+        msg = (f"{vendor}{state}  |  Total: {total:,}  |  "
                f"Filtered: {shown:,}  |  Shown: {rendered:,}")
         if rendered < shown:
             msg += f"  (son {MAX_DISPLAY_ROWS:,} satir)"
@@ -1360,8 +1376,10 @@ def _parse_cli_args(argv: list[str]) -> argparse.Namespace:
                    help="Pre-fill the user-contains filter on startup.")
     p.add_argument("--filter-eventid", default="",
                    help="Pre-filter by a specific EventID on startup (e.g. 4625).")
-    p.add_argument("--filter-vendor", default="", choices=["", "NetApp", "Huawei"],
-                   help="Pre-filter by storage vendor on startup.")
+    p.add_argument("--vendor", default="Auto",
+                   type=lambda v: v.capitalize(),
+                   choices=["Auto", "Netapp", "Huawei"],
+                   help="Storage vendor label (default: auto-detect).")
     p.add_argument("--only-failures", action="store_true",
                    help="Show only Audit Failure events on startup.")
     return p.parse_args(argv)
@@ -1379,8 +1397,8 @@ def main(argv: list[str] | None = None):
         app.filter_user.set(args.filter_user)
     if args.filter_eventid:
         app.filter_eventid.set(args.filter_eventid)
-    if args.filter_vendor:
-        app.filter_vendor.set(args.filter_vendor)
+    if args.vendor != "Auto":
+        app.vendor_mode.set("NetApp" if args.vendor == "Netapp" else args.vendor)
     if args.only_failures:
         app.filter_result.set("Audit Failure")
     if args.path and args.tail:
