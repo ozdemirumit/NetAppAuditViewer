@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-07
 
 ### Added
+- Version number shown at the bottom right of the window (and in the title bar).
 - Huawei OceanStor CIFS audit XML support (namespaced events, `<Events>` wrapper, vendor auto-detection).
 - `Share` column, Vendor selector (Auto/NetApp/Huawei) with detected vendor in the status bar, `--vendor` CLI flag.
 - `%%NNNN` AccessList decoding; Shares / Top objects / File access users / Access types statistics tabs.

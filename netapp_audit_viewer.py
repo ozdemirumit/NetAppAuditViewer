@@ -36,6 +36,8 @@ from collections import Counter
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+__version__ = "1.1.0"   # keep in sync with pyproject.toml
+
 # ---------------------------------------------------------------------------
 # Configuration constants
 # ---------------------------------------------------------------------------
@@ -478,7 +480,7 @@ class AuditViewer(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("NetApp Audit XML Viewer")
+        self.title(f"NetApp Audit XML Viewer  v{__version__}")
         self.geometry("1340x800")
         self.minsize(900, 500)
 
@@ -666,8 +668,12 @@ class AuditViewer(tk.Tk):
         self.detail.configure(state="disabled")
 
         self.status_var = tk.StringVar(value="Ready. Select an XML file.")
-        ttk.Label(self, textvariable=self.status_var, anchor="w",
-                  relief="sunken", padding=(8, 4)).pack(fill="x", side="bottom")
+        bar = ttk.Frame(self, relief="sunken")
+        bar.pack(fill="x", side="bottom")
+        ttk.Label(bar, text=f"v{__version__}", anchor="e",
+                  padding=(8, 4)).pack(side="right")
+        ttk.Label(bar, textvariable=self.status_var, anchor="w",
+                  padding=(8, 4)).pack(side="left", fill="x", expand=True)
 
     # ----------------------------------------------------------- Dosya/tail
 

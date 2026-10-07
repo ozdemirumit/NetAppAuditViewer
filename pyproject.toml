@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netapp-audit-viewer"
-version = "1.0.0"
+version = "1.1.0"
 description = "Python GUI viewer and live-tail tool for NetApp ONTAP CIFS Security Audit XML logs — stdlib only, no install."
 readme = "README.md"
 requires-python = ">=3.10"
