@@ -48,3 +48,17 @@ def test_netapp_still_works():
                       b"</System><EventData><Data Name='IpAddress'>1.2.3.4</Data>"
                       b"<Data Name='TargetUserName'>u</Data></EventData></Event>")
     assert e["Vendor"] == "NetApp" and e["User"] == "u" and e["IP"] == "1.2.3.4"
+
+
+def test_bare_ampersand_and_unknown_fields():
+    ev = OPEN.replace(b"/BOA/a.pdf", b"/BOA/A & B.pdf").replace(
+        b"<EventData>", b"<EventData><Data Name='NewField'>x</Data>")
+    ev = ev.replace(b"</System>", b"<Extra>y</Extra></System>")
+    e = v.parse_event(ev)
+    assert e and e["Path"] == "/BOA/A & B.pdf"
+    assert e["_extra"]["NewField"] == "x" and e["_extra"]["Extra"] == "y"
+
+
+def test_non_utf8_bytes():
+    e = v.parse_event(OPEN.replace(b"a.pdf", "ş.pdf".encode("cp1254")))
+    assert e and e["Path"].endswith(".pdf")

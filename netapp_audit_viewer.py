@@ -49,12 +49,39 @@ EVENT_RE = re.compile(rb"<Event\b.*?</Event>", re.DOTALL)
 # Parser
 # ---------------------------------------------------------------------------
 
+PARSE_STATS = {"failed": 0, "repaired": 0}
+_BAD_AMP = re.compile(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)")
+_BAD_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _parse_lenient(xml_bytes: bytes):
+    """Retry parsing events that strict XML rejects: bare '&' in file names,
+    control characters, or non-UTF-8 bytes (e.g. legacy Turkish code pages)."""
+    for enc in ("utf-8", "cp1254", "latin-1"):
+        try:
+            text = xml_bytes.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    text = _BAD_CTRL.sub("", _BAD_AMP.sub("&amp;", text))
+    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    PARSE_STATS["repaired"] += 1
+    return root
+
+
 def parse_event(xml_bytes: bytes) -> dict | None:
     """Parse a single <Event>...</Event> block and return as dict."""
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
-        return None
+        root = _parse_lenient(xml_bytes)
+        if root is None:
+            PARSE_STATS["failed"] += 1
+            return None
 
     # Huawei events carry an xmlns on <Event>; strip namespaces so the same
     # find() calls work for every vendor.
@@ -130,6 +157,11 @@ def parse_event(xml_bytes: bytes) -> dict | None:
         if "huawei" in (ns + (prov.attrib.get("Name", "") if prov is not None
                               else "")).lower():
             rec["Vendor"] = rec["VendorDetected"] = "Huawei"
+        known = {"EventID", "EventName", "Version", "Source", "Level", "Opcode",
+                 "Computer", "Channel", "Result", "TimeCreated", "Provider"}
+        for child in sysn:
+            if child.tag not in known and child.text and child.text.strip():
+                rec["_extra"][child.tag] = child.text.strip()
         r = sysn.find("Result")
         if r is not None and r.text:
             rec["Result"] = r.text.strip()
@@ -1110,6 +1142,9 @@ class AuditViewer(tk.Tk):
             vendor = (f"Vendor: {self.events[-1].get('Vendor', '')}"
                       f"{' (auto-detected)' if mode == 'Auto' else ' (manual)'}"
                       "  |  ")
+        if PARSE_STATS["failed"] or PARSE_STATS["repaired"]:
+            vendor += (f"Unparsable: {PARSE_STATS['failed']:,} / "
+                       f"repaired: {PARSE_STATS['repaired']:,}  |  ")
         msg = (f"{vendor}{state}  |  Total: {total:,}  |  "
                f"Filtered: {shown:,}  |  Shown: {rendered:,}")
         if rendered < shown:
